@@ -50,8 +50,17 @@ def get_video_metadata(video_id: str) -> dict:
         }
 
 
+def _format_timestamp(total_seconds: int) -> str:
+    h = total_seconds // 3600
+    m = (total_seconds % 3600) // 60
+    s = total_seconds % 60
+    if h > 0:
+        return f"[{h}:{m:02d}:{s:02d}]"
+    return f"[{m:02d}:{s:02d}]"
+
+
 def get_transcript_with_timestamps(video_id: str) -> str:
-    """Downloads the video transcript and formats each line as '[MM:SS] text'.
+    """Downloads the video transcript and formats each line as '[MM:SS]' or '[H:MM:SS]' text.
 
     Tries Polish first, then falls back to English.
     Raises RuntimeError if no transcript is available.
@@ -60,8 +69,7 @@ def get_transcript_with_timestamps(video_id: str) -> str:
         transcript = YouTubeTranscriptApi().fetch(video_id, languages=["pl", "en"])
         lines = []
         for entry in transcript:
-            total_seconds = int(entry.start)
-            timestamp = f"[{total_seconds // 60:02d}:{total_seconds % 60:02d}]"
+            timestamp = _format_timestamp(int(entry.start))
             lines.append(f"{timestamp} {entry.text}")
         return "\n".join(lines)
     except Exception as exc:

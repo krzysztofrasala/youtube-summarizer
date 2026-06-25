@@ -51,6 +51,44 @@ def generate_summary(transcript_text: str) -> str:
     return response.text
 
 
+def compare_videos(videos: list[dict]) -> str:
+    """Generates a structured comparative report for multiple videos.
+
+    videos: list of {"title": str, "channel": str, "transcript": str}
+    """
+    client = _get_client()
+
+    video_blocks = "\n\n".join(
+        f"### Video {i + 1}: {v['title']} — {v['channel']}\n{v['transcript']}"
+        for i, v in enumerate(videos)
+    )
+
+    prompt = (
+        f"You are an expert analyst comparing {len(videos)} YouTube videos on a related topic.\n"
+        "Below are their full transcripts. Produce a structured comparative report.\n\n"
+        "Use exactly this structure:\n\n"
+        "## Videos Compared\n"
+        "One-sentence summary of each video's angle or thesis.\n\n"
+        "## Common Ground\n"
+        "Key points, facts, or arguments that appear across multiple videos.\n\n"
+        "## Key Differences\n"
+        "Where the videos disagree, contradict each other, or take different stances. "
+        "Be specific — name which video takes which position.\n\n"
+        "## Unique Insights\n"
+        "Valuable points raised by only one video that the others miss.\n\n"
+        "## Verdict\n"
+        "Which video is best for which type of viewer, and why.\n\n"
+        "Rules:\n"
+        "- Match the report language to the transcripts' language.\n"
+        "- Be specific — quote timestamps and attribute claims to the correct video.\n"
+        "- No filler. Every sentence must add information.\n\n"
+        f"Transcripts:\n{video_blocks}"
+    )
+
+    response = client.models.generate_content(model=_MODEL, contents=prompt)
+    return response.text
+
+
 def chat_with_video(transcript_text: str, history: list[dict]) -> str:
     """Answers the latest question in history using the video transcript as context.
 
