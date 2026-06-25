@@ -1,52 +1,220 @@
+import html
 import streamlit as st
-from src.extractor import extract_video_id, get_video_metadata, get_video_transcript
+from datetime import datetime
+from dotenv import load_dotenv
+from src.extractor import extract_video_id, get_transcript_with_timestamps, get_video_metadata
 from src.summarizer import generate_summary
 
-# Page configuration
-st.set_page_config(page_title="AI YouTube Summarizer", page_icon="🎬", layout="wide")
+load_dotenv()
 
-st.title("🎬 AI YouTube Summarizer")
+CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-# Input section
-url = st.text_input("YouTube URL:", placeholder="https://www.youtube.com/watch?v=...")
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
+}
 
-if st.button("Generate Summary 🚀"):
-    if not url:
-        st.warning("Please provide a valid URL!")
-    else:
-        try:
-            with st.spinner("Processing..."):
-                video_id = extract_video_id(url)
-                metadata = get_video_metadata(url)
-                
-                # Layout: Two columns for metadata and thumbnail
-                col1, col2 = st.columns([1, 2])
-                
-                with col1:
-                    if metadata.get('thumbnail'):
-                        st.image(metadata['thumbnail'], use_container_width=True)
-                
-                with col2:
-                    st.subheader(metadata['title'])
-                    st.write(f"**Channel:** {metadata['channel']}")
-                    st.write(f"**Video ID:** {video_id}")
+/* Hero banner */
+.hero {
+    background: linear-gradient(135deg, #FF0000 0%, #B00000 100%);
+    border-radius: 16px;
+    padding: 2.5rem 2rem;
+    text-align: center;
+    color: white;
+    margin-bottom: 2rem;
+    box-shadow: 0 6px 28px rgba(200, 0, 0, 0.22);
+}
+.hero h1 {
+    font-size: 2.6rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin: 0 0 0.4rem 0;
+}
+.hero p {
+    font-size: 1.05rem;
+    opacity: 0.88;
+    margin: 0;
+}
 
-                # AI Processing
-                transcript = get_video_transcript(video_id)
-                summary = generate_summary(transcript, metadata['title'], metadata['channel'])
-                
-                st.success("Summary generated!")
-                st.markdown("### ✨ Summary")
-                st.info(summary)
-                
-                # Export functionality
-                export_data = f"Title: {metadata['title']}\nChannel: {metadata['channel']}\nURL: {url}\n\n{summary}"
-                st.download_button(
-                    label="📥 Download Summary",
-                    data=export_data,
-                    file_name=f"summary_{video_id}.txt",
-                    mime="text/plain"
+/* Video metadata card */
+.video-meta .v-title {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin-bottom: 0.2rem;
+}
+.video-meta .v-channel {
+    font-size: 0.88rem;
+    color: #6c757d;
+}
+
+/* Sidebar history item */
+.hist-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    line-height: 1.3;
+    margin-bottom: 2px;
+}
+.hist-time {
+    font-size: 0.75rem;
+    color: #888;
+    margin-bottom: 6px;
+}
+
+/* Primary button */
+div[data-testid="stButton"] > button[kind="primary"] {
+    background: #FF0000 !important;
+    border: none !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    font-size: 1rem !important;
+    padding: 0.65rem 1.5rem !important;
+    transition: background 0.2s, transform 0.1s !important;
+}
+div[data-testid="stButton"] > button[kind="primary"]:hover {
+    background: #CC0000 !important;
+    transform: translateY(-1px) !important;
+}
+
+/* Download button */
+div[data-testid="stDownloadButton"] > button {
+    background: transparent !important;
+    border: 2px solid #FF0000 !important;
+    color: #FF0000 !important;
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+    transition: background 0.2s, color 0.2s !important;
+}
+div[data-testid="stDownloadButton"] > button:hover {
+    background: #FF0000 !important;
+    color: white !important;
+}
+</style>
+"""
+
+
+def _truncate(text: str, max_len: int) -> str:
+    return text if len(text) <= max_len else text[: max_len - 1] + "…"
+
+
+def run_web_app():
+    st.set_page_config(
+        page_title="YouTube Summarizer",
+        page_icon="🎬",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+    st.markdown(CSS, unsafe_allow_html=True)
+
+    if "history" not in st.session_state:
+        st.session_state.history = []
+    if "current_summary" not in st.session_state:
+        st.session_state.current_summary = None
+
+    # ── Sidebar: history ──────────────────────────────────────────────────────
+    with st.sidebar:
+        st.markdown("## History")
+        if not st.session_state.history:
+            st.info("No videos summarized yet.")
+        else:
+            for i, item in enumerate(reversed(st.session_state.history)):
+                original_idx = len(st.session_state.history) - 1 - i
+                st.image(item["thumbnail"], use_container_width=True)
+                st.markdown(
+                    f'<div class="hist-title">{html.escape(_truncate(item["title"], 52))}</div>'
+                    f'<div class="hist-time">{html.escape(item["channel"])} · {html.escape(item["time"])}</div>',
+                    unsafe_allow_html=True,
                 )
-                
-        except Exception as e:
-            st.error(f"An error occurred: {e}")
+                if st.button("View summary", key=f"hist_{original_idx}"):
+                    st.session_state.current_summary = item
+                st.divider()
+
+    # ── Hero ──────────────────────────────────────────────────────────────────
+    st.markdown(
+        """
+        <div class="hero">
+            <h1>🎬 YouTube Summarizer</h1>
+            <p>Paste any YouTube link — get an AI-powered summary with timestamps in seconds.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # ── Input ─────────────────────────────────────────────────────────────────
+    video_url = st.text_input(
+        "YouTube URL",
+        placeholder="https://www.youtube.com/watch?v=...",
+        label_visibility="collapsed",
+    )
+    submitted = st.button("Generate Summary", type="primary", use_container_width=True)
+
+    if submitted:
+        if not video_url.strip():
+            st.error("Please enter a YouTube URL before clicking Generate.")
+        else:
+            with st.status("Analyzing video…", expanded=True) as status:
+                try:
+                    st.write("Extracting video ID…")
+                    video_id = extract_video_id(video_url)
+
+                    st.write("Fetching video metadata…")
+                    metadata = get_video_metadata(video_id)
+
+                    st.write("Downloading transcript…")
+                    transcript = get_transcript_with_timestamps(video_id)
+
+                    st.write("Generating AI summary with Gemini…")
+                    summary = generate_summary(transcript)
+
+                    entry = {
+                        "video_id": video_id,
+                        "url": video_url,
+                        "summary": summary,
+                        "time": datetime.now().strftime("%H:%M"),
+                        "title": metadata["title"],
+                        "channel": metadata["channel"],
+                        "thumbnail": metadata["thumbnail"],
+                    }
+                    st.session_state.history.append(entry)
+                    st.session_state.current_summary = entry
+                    status.update(label="Summary ready!", state="complete")
+
+                except Exception as error:
+                    status.update(label="Something went wrong", state="error")
+                    st.error(str(error))
+
+    # ── Display current summary ───────────────────────────────────────────────
+    if st.session_state.current_summary:
+        current = st.session_state.current_summary
+        st.divider()
+
+        col_thumb, col_info = st.columns([1, 3], gap="large")
+        with col_thumb:
+            st.image(current["thumbnail"], use_container_width=True)
+
+        with col_info:
+            st.markdown(
+                f'<div class="video-meta">'
+                f'<div class="v-title">{html.escape(current["title"])}</div>'
+                f'<div class="v-channel">by {html.escape(current["channel"])}</div>'
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            st.write("")
+            st.download_button(
+                label="Download Summary (.md)",
+                data=current["summary"],
+                file_name=f"summary_{current['video_id']}.md",
+                mime="text/markdown",
+            )
+
+        st.divider()
+
+        with st.container(border=True):
+            st.markdown(current["summary"])
+
+
+if __name__ == "__main__":
+    run_web_app()

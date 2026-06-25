@@ -1,69 +1,51 @@
 import os
-from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import PromptTemplate
+from functools import lru_cache
+from google import genai
 
-# Load environment variables (e.g., GOOGLE_API_KEY) from the .env file
-load_dotenv()
+_MODEL = "gemini-2.5-flash"
 
-def generate_summary(transcript: str, title: str, channel: str, style: str = "Detailed") -> str:
-    """
-    Generates a summary of the video transcript using Gemini.
-    'style' can be 'Short' or 'Detailed'.
-    """
-    # Verify if the API key is present
+_PROMPT_TEMPLATE = """\
+You are an expert content analyst specializing in YouTube video summaries.
+Below is a transcript with [MM:SS] timestamps. Produce a professional, well-structured summary.
+
+Use exactly this structure:
+
+## Overview
+2–3 sentences describing the video's main theme, purpose, and who it's for.
+
+## Key Topics
+For each major section use this format:
+### [MM:SS] — Section Title
+- Key idea or argument
+- Supporting detail or example
+- Additional point (if relevant)
+
+## Key Takeaways
+3–5 concise bullet points with the most actionable or important insights from the whole video.
+
+Rules:
+- Match the summary language to the transcript language.
+- Be concise but substantive — no filler phrases.
+- Timestamps must come from the transcript, not invented.
+
+Transcript:
+{transcript}"""
+
+
+@lru_cache(maxsize=1)
+def _get_client() -> genai.Client:
+    """Returns a cached Gemini client, created once per process."""
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        raise ValueError("Google API Key not found. Please check your .env file.")
+        raise ValueError(
+            "GOOGLE_API_KEY not set. Add it to your .env file — see .env.example."
+        )
+    return genai.Client(api_key=api_key)
 
-    # Initialize the model
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.3)
-    
-    # Adjust the prompt based on selected style
-    if style == "Short":
-        detail_instruction = "Provide a very brief 3-4 sentence summary focusing only on the main idea."
-    else:
-        detail_instruction = """
-        Provide a structured, easy-to-read summary. 
-        Include:
-        1. A concise overview of the main topic.
-        2. Key takeaways or main points (use bullet points).
-        3. A short conclusion.
-        """
 
-    # Define the instruction structure for the AI
-    prompt_template = f"""
-    You are an expert content summarizer. Your task is to summarize the following YouTube video.
-    
-    Video Title: {{title}}
-    Channel: {{channel}}
-    
-    Transcript:
-    {{transcript}}
-    
-    {detail_instruction}
-    
-    IMPORTANT: Detect the primary language of the transcript and write the entire summary in THAT EXACT SAME language.
-    
-    Summary:
-    """
-    
-    # Create the prompt using LangChain's core PromptTemplate
-    prompt = PromptTemplate(
-        input_variables=["title", "channel", "transcript"],
-        template=prompt_template
-    )
-    
-    # Create the execution chain
-    chain = prompt | llm
-    
-    try:
-        # Run the model with our variables
-        response = chain.invoke({
-            "title": title,
-            "channel": channel,
-            "transcript": transcript
-        })
-        return response.content
-    except Exception as e:
-        raise RuntimeError(f"Failed to generate summary: {str(e)}")
+def generate_summary(transcript_text: str) -> str:
+    """Sends a timestamped transcript to Gemini and returns a structured Markdown summary."""
+    client = _get_client()
+    prompt = _PROMPT_TEMPLATE.format(transcript=transcript_text)
+    response = client.models.generate_content(model=_MODEL, contents=prompt)
+    return response.text
