@@ -4,6 +4,8 @@ An AI-powered tool that generates structured, timestamped summaries of any YouTu
 
 Paste a link, get a clean summary broken into chapters with key takeaways, in the same language as the video.
 
+![YouTube Summarizer screenshot](docs/screenshot.png)
+
 ---
 
 ## Features
