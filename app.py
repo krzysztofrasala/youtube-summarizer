@@ -3,7 +3,7 @@ import streamlit as st
 from datetime import datetime
 from dotenv import load_dotenv
 from src.extractor import extract_video_id, get_transcript_with_timestamps, get_video_metadata
-from src.summarizer import generate_summary
+from src.summarizer import generate_summary, chat_with_video
 
 load_dotenv()
 
@@ -172,6 +172,8 @@ def run_web_app():
                         "video_id": video_id,
                         "url": video_url,
                         "summary": summary,
+                        "transcript": transcript,
+                        "chat": [],
                         "time": datetime.now().strftime("%H:%M"),
                         "title": metadata["title"],
                         "channel": metadata["channel"],
@@ -214,6 +216,24 @@ def run_web_app():
 
         with st.container(border=True):
             st.markdown(current["summary"])
+
+        # ── Chat with this video ──────────────────────────────────────────────
+        st.divider()
+        st.markdown("### 💬 Chat with this video")
+
+        for msg in current.get("chat", []):
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        if prompt := st.chat_input("Ask anything about this video…"):
+            current["chat"].append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking…"):
+                    answer = chat_with_video(current["transcript"], current["chat"])
+                st.markdown(answer)
+            current["chat"].append({"role": "assistant", "content": answer})
 
 
 if __name__ == "__main__":

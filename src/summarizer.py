@@ -49,3 +49,37 @@ def generate_summary(transcript_text: str) -> str:
     prompt = _PROMPT_TEMPLATE.format(transcript=transcript_text)
     response = client.models.generate_content(model=_MODEL, contents=prompt)
     return response.text
+
+
+def chat_with_video(transcript_text: str, history: list[dict]) -> str:
+    """Answers the latest question in history using the video transcript as context.
+
+    history: list of {"role": "user"|"assistant", "content": str} dicts,
+             with the most recent user message last.
+    """
+    client = _get_client()
+
+    # Prime the conversation with transcript context as a synthetic first exchange
+    contents = [
+        {
+            "role": "user",
+            "parts": [{"text": (
+                "You are a helpful assistant answering questions about a YouTube video. "
+                "Base your answers solely on the transcript below. "
+                "Reference specific timestamps when relevant. "
+                "If the answer is not in the transcript, say so clearly.\n\n"
+                f"Transcript:\n{transcript_text}"
+            )}],
+        },
+        {
+            "role": "model",
+            "parts": [{"text": "Understood. I have the full transcript and I'm ready to answer your questions about this video."}],
+        },
+    ]
+
+    for msg in history:
+        role = "model" if msg["role"] == "assistant" else "user"
+        contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+
+    response = client.models.generate_content(model=_MODEL, contents=contents)
+    return response.text
